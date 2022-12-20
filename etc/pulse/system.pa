@@ -1,0 +1,45 @@
+# This startup script is used only if PulseAudio is started in system
+# mode.
+
+load-module module-null-sink sink_name=rtp format=s16be channels=2 rate=44100
+load-module module-rtp-send source=rtp.monitor destination=192.168.178.20 port=46998
+set-default-sink rtp
+
+
+### Automatically restore the volume of streams and devices
+load-module module-device-restore
+load-module module-stream-restore
+load-module module-card-restore
+
+load-module module-bluetooth-discover
+load-module module-bluetooth-policy a2dp_source=true
+load-module module-switch-on-port-available
+load-module module-rescue-streams
+load-module module-native-protocol-unix auth-group=pulse-access
+
+### Automatically load driver modules depending on the hardware available
+.ifexists module-detect.so
+### Use the static hardware detection module (for systems that lack udev/hal support)
+load-module module-detect
+.endif
+
+### Load several protocols
+.ifexists module-esound-protocol-unix.so
+load-module module-esound-protocol-unix
+.endif
+load-module module-native-protocol-unix
+
+### Automatically restore the default sink/source when changed by the user
+### during runtime
+### NOTE: This should be loaded as early as possible so that subsequent modules
+### that look up the default sink/source get the right value
+load-module module-default-device-restore
+
+### Make sure we always have a sink around, even if it is a null sink.
+load-module module-always-sink
+
+### Automatically suspend sinks/sources that become idle for too long
+#load-module module-suspend-on-idle
+
+### Enable positioned event sounds
+load-module module-position-event-sounds
