@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+
+{% block head %}
+
+{% endblock %}
+
+{% block body %}
+
+    <div class="d-flex justify-content-center">
+      <form class="networksettingsupload" method="post">
+        <div class="row  py-2">
+          
+          <label for="mode"  class="form-label">Mode:</label>
+          <select id="mode" name="mode" class="form-select">
+            <option value="dhcp">DHCP</option>
+            <option {{DHCP_STATIC}} value="static">Static</option>
+          </select>
+        </div>
+        <div class="row  py-2">
+          <label for="ip" class="form-label">IP Address:</label>
+          <input  class="form-control" type="text" id="ip" name="ip" placeholder = "{{IP}}" >
+        </div>
+        <div class="row  py-2">
+          <label for="subnet" class="form-label">Subnet Mask:</label>
+          <input  class="form-control" type="text" id="subnet" name="subnet" placeholder="{{SN}}">
+        </div>
+        <div class="row  py-2">
+          <label for="gateway" class="form-label">Gateway:</label>
+          <input  class="form-control" type="text" id="gateway" name="gateway" placeholder="{{GW}}">
+        </div>
+        <div class="row  py-2">
+          <button class="btn btn-primary" id="saveip" type="submit" value="saveip">Save</button>
+        </div>
+      </form>
+    </div>
+    <br>
+    <br>
+    <div class="d-flex justify-content-center">
+    <form class="firmwareupload" action ="" method="post" enctype="multipart/form-data">
+      <div class="row  py-2">
+        <label for="formFile" class="form-label">Firmware Update</label>
+        <input class="form-control" name = "firmware" type="file" id="formFile" accept=".bin">
+        <button class="btn btn-primary" id="uploadFirmware" type="submit" value="uploadFirmware">Upload</button>
+      </div>    
+    </form>
+    </div>
+    <br>
+    <br>
+    <div class="d-flex justify-content-center">
+      <form class="firmwareupload" method="post">
+        <div class="row  py-2">
+          <label for="formFile" class="form-label">Firmware Version: {{VERSION}}</label>
+          <button class="btn btn-primary" id="reboot" type="button" value="reboot">Reboot</button>
+        </div>
+      </form>
+    </div>
+    <script language="JavaScript" type="text/javascript" src=" {{ url_for('static', filename='jquery-1.2.6.min.js') }}"></script>
+    <script src=" {{ url_for('static', filename='script.js') }}"></script>
+
+{% endblock %}

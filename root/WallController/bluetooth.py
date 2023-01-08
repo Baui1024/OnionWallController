@@ -128,7 +128,7 @@ class Bluetooth():
                         self.metadata_reset()   
                 await asyncio.sleep(1)
             except DBusError as err:
-                print(err)
+                self.metadata_reset()   
 
     async def keep_devices_updated(self):
         try:
@@ -159,6 +159,13 @@ class Bluetooth():
                     
                 if await device_interface.get_connected():
                     #to do - request UUID maybe but maybe trust does the trick 
+                    if not self.connected_device_mac == device_mac:
+                        player_proxy = await self.get_player_proxy(device_mac)
+                        try:
+                            player_properies_interface = player_proxy.get_interface("org.freedesktop.DBus.Properties")
+                            player_properies_interface.on_properties_changed(self.listen_to_media_properties)
+                        except:
+                            print(f"Device {device_mac} no player available")
                     self.connected_device_name = await device_interface.get_name()
                     self.connected_device_mac = device_mac 
                     device_connected = True

@@ -55,7 +55,7 @@ class WallController:
         #register the Headset Profile to BlueZ
         #bluez_profile_manager = bluez_proxy.get_interface("org.bluez.ProfileManager1")
         #await bluez_profile_manager.call_register
-        #print(agent.introspect().methods)
+        #print(agent.introsp    ect().methods)
         #await agent.call_release()
 
         #print(await bluetooth.get_name())

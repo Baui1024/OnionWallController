@@ -1,0 +1,26 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2007 OpenWrt.org
+
+#start after dbus (60)
+START=99
+USE_PROCD=1
+
+DIR=/root/WallController
+DAEMON=$DIR/main.py
+DAEMON_NAME=wallcontroller
+
+PROG=/root/Webserver/webserver.py
+
+# The process ID of the script when it runs is stored here:
+PIDFILE=/var/run/$DAEMON_NAME.pid
+
+start_service() {
+	logger "$DAEMON_NAME started"
+	procd_open_instance
+	procd_set_param command start-stop-daemon -S -n $DAEMON_NAME -x python3 $DAEMON -b -p $PIDFILE -m
+	procd_close_instance
+}
+stop_service () {
+	logger "$DAEMON_NAME stopped"	
+	start-stop-daemon -K -p $PIDFILE 
+}

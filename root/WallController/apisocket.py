@@ -2,6 +2,7 @@ import asyncio
 import json
 #from main import WallController
 import re
+import subprocess
 import array
 import gc
 
@@ -68,6 +69,7 @@ class APIServer():
         localID = self.cid
         self.connections[str(self.cid)] = swriter
         print('Got connection from client', self.cid, swriter.get_extra_info('peername'))
+        self.config_pulseaudio(swriter.get_extra_info('peername')[0])
         if self.bluetooth != None:
             await self.send_whole_state()
         try:
@@ -168,3 +170,26 @@ class APIServer():
         self.server.close()
         #await self.server.wait_closed()
         print('Server closed.')
+
+    def config_pulseaudio(self,ip):
+        pulseconfig = open("/etc/pulse/system.pa")
+        output_file = ""
+        for line in pulseconfig:
+            
+            if re.search("load-module module-rtp-send source=rtp.monitor destination=",line):
+                try:
+                    if ip == re.search("\d+.\d+.\d+.\d+",line).group(0):
+                        print("same ip")
+                        return
+                except:
+                    raise
+                output_file += f"load-module module-rtp-send source=rtp.monitor destination={ip} port=46998\n"
+            else:
+                output_file += line
+            pass
+        pulseconfig.close()
+        new_pulseconfig = open("/etc/pulse/system.pa","w")
+        new_pulseconfig.write(output_file)
+        new_pulseconfig.close()
+        subprocess.run(["killall", "pulseaudio"])
+        subprocess.run(["/etc/init.d/pulseaudio","start"])
