@@ -22,9 +22,11 @@ import numbers
 import time
 #import numpy as np
 import struct
+import array
+import sys
 
 import spidev
-import RPi.GPIO as GPIO
+#import RPi.GPIO as GPIO
 import gpiod 
 
 
@@ -39,8 +41,8 @@ BG_SPI_CS_FRONT = 1
 SPI_CLOCK_HZ = 16000000
 
 # Constants for interacting with display registers.
-ST7735_TFTWIDTH = 160
-ST7735_TFTHEIGHT = 80
+ST7735_TFTWIDTH = 80
+ST7735_TFTHEIGHT = 160
 
 ST7735_COLS = 132
 ST7735_ROWS = 162
@@ -60,6 +62,8 @@ ST7735_INVON = 0x21
 ST7735_DISPOFF = 0x28
 ST7735_DISPON = 0x29
 
+#ST7735_CASET = 0x2A
+#ST7735_RASET = 0x2B
 ST7735_CASET = 0x2A
 ST7735_RASET = 0x2B
 ST7735_RAMWR = 0x2C
@@ -119,19 +123,23 @@ def image_to_data(image, rotation=0):
     #pb = np.rot90(np.array(image.convert('RGB')), rotation // 90).astype('uint16')
     #color = ((pb[:, :, 0] & 0xF8) << 8) | ((pb[:, :, 1] & 0xFC) << 3) | (pb[:, :, 2] >> 3)
     #return np.dstack(((color >> 8) & 0xFF, color & 0xFF)).flatten().tolist()
+    
     pixels = list(image.getdata())
-    outimage = None
-    for pix in pixel_list:
-        r = (pix[0] >> 3) & 0x1F
-        g = (pix[1] >> 2) & 0x3F
-        b = (pix[2] >> 3) & 0x1F
-        outimage += (struct.pack('H', (r << 11) + (g << 5) + b))
+    img_buffer = []
+    for pix in pixels:
+            r = (pix[0] >> 3) & 0x1F
+            g = (pix[1] >> 2) & 0x3F
+            b = (pix[2] >> 3) & 0x1F
+            pixel = (r << 11) + (g << 5) + b
+            pixel_rgb = [pixel >> 8, pixel & 255]
+            img_buffer.extend(pixel_rgb)
+    return img_buffer
 
 class ST7735(object):
     """Representation of an ST7735 TFT LCD."""
 
     def __init__(self, port, cs, dc, backlight=None, rst=None, width=ST7735_TFTWIDTH,
-                 height=ST7735_TFTHEIGHT, rotation=90, offset_left=None, offset_top=None, invert=True, spi_speed_hz=4000000):
+                 height=ST7735_TFTHEIGHT, rotation=90, offset_left=None, offset_top=None, invert=True, spi_speed_hz=SPI_CLOCK_HZ):
         """Create an instance of the display using SPI communication.
 
         Must provide the GPIO pin number for the D/C pin and the SPI driver.
@@ -184,8 +192,9 @@ class ST7735(object):
         #GPIO.setup(dc, GPIO.OUT)
 
         # Setup backlight as output (if provided).
-        self._backlight = CHIP.get_line(backlight)
+        
         if backlight is not None:
+            self._backlight = CHIP.get_line(backlight)
             self._backlight.request(consumer='root', type=gpiod.LINE_REQ_DIR_OUT)
             self._backlight.set_value(0)
             time.sleep(0.1)
@@ -193,7 +202,7 @@ class ST7735(object):
 
         # Setup reset as output (if provided).
         if rst is not None:
-            self._dc.request(consumer='root', type=gpiod.LINE_REQ_DIR_OUT)
+            self._rst.request(consumer='root', type=gpiod.LINE_REQ_DIR_OUT)
             #GPIO.setup(rst, GPIO.OUT)
 
         self.reset()
@@ -209,9 +218,17 @@ class ST7735(object):
         self._dc.set_value(is_data)
         #GPIO.output(self._dc, is_data)
         # Convert scalar argument to list so either can be passed as parameter.
+
+        
+
         if isinstance(data, numbers.Number):
             data = [data & 0xFF]
-        self._spi.xfer3(data)
+        
+        for i in range(0, len(data), chunk_size):
+            chunk = data[i:i + chunk_size]
+            #print(f"chunk pos {i}: \n", chunk)
+            self._spi.xfer3(chunk,0)
+        
 
     def set_backlight(self, value):
         """Set the backlight on/off."""
@@ -247,6 +264,8 @@ class ST7735(object):
             self._rst.set_value(1)
             #GPIO.output(self._rst, 1)
             time.sleep(0.500)
+
+            
 
     def _init(self):
         # Initialize the display.
@@ -414,6 +433,9 @@ class ST7735(object):
         # Unfortunate that this copy has to occur, but the SPI byte writing
         # function needs to take an array of bytes and PIL doesn't natively
         # store images in 16-bit 565 RGB format.
+        #pixelbytes = image_to_data(image)
+
         pixelbytes = list(image_to_data(image, self._rotation))
+        print(len(pixelbytes))
         # Write data to hardware.
         self.data(pixelbytes)
