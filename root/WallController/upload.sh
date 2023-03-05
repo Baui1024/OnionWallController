@@ -1,12 +1,14 @@
-ip=192.168.178.77
-scp display.py root@$ip:WallController/display.py
-scp adafruit_st7735.py root@$ip:WallController/adafruit_st7735.py
-scp adafruit_rgb_display.py root@$ip:WallController/adafruit_rgb_display.py
-scp st7735.py root@$ip:WallController/st7735.py
-scp agent.py root@$ip:WallController/agent.py
+ip=192.168.178.91
 scp bluetooth.py root@$ip:WallController/bluetooth.py
 scp apisocket.py root@$ip:WallController/apisocket.py
+scp endpoint.py root@$ip:WallController/endpoint.py
 scp main.py root@$ip:WallController/main.py
+scp encoder2.py root@$ip:WallController/encoder2.py
+scp display.py root@$ip:WallController/display.py
+scp agent.py root@$ip:WallController/agent.py
+
+#scp mmio.py root@$ip:WallController/mmio.py
+
 scp version root@$ip:WallController/version
 
 

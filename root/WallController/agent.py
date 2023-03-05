@@ -11,37 +11,64 @@ class Agent(ServiceInterface):
         print("agent created")
 
     @method()
-    async def Release(self):
+    def Release(self):
         try:
             print("agent has been released")
         except DBusError:
             raise
 
     @method()
-    async def RequestPinCode(self, device: 'o'):
+    def RequestPinCode(self, device: 'o'):
+        self._bar += 1
         try:
             print("PinCode Requested")
         except DBusError:
             raise
 
     @method()
-    async def RequestConfirmation(self, device: 'o', passkey: 'u'):
+    def RequestConfirmation(self, device: 'o', passkey: 'u'):
+        self._bar += 1
         try: 
             print("requested confirmation")
             print("passkey: ", passkey)
             return 
         except DBusError:
             raise
-
+    
     @method()
-    async def AuthorizeService(self, device: 'o', uuid: 's'):
-        try:
-            print("UUID requested: ", uuid)
+    def RequestAuthorization(self, device: 'o'):
+        self._bar += 1
+        try: 
+            print("requested Authorization")
+            #return 
         except DBusError:
             raise
 
     @method()
-    async def Cancel():
+    def AuthorizeService(self, device: 'o', uuid: 's'):
+        self._bar += 1
+        try:
+            print("UUID requested: ", uuid)
+            return
+        except DBusError:
+            raise
+
+    @dbus_property()
+    def Bar(self) -> 'y':
+        return self._bar
+    
+    @Bar.setter
+    def Bar(self, val: 'y'):
+        if self._bar == val:
+            return
+
+        self._bar = val
+
+        self.emit_properties_changed({'Bar': self._bar})
+    
+
+    @method()
+    def Cancel():
         print("something failed in agent")
 
     #@dbus.service.method(AGENT_INTERFACE,

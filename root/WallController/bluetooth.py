@@ -2,7 +2,9 @@ from dbus_next.aio import MessageBus
 from dbus_next import Variant, DBusError
 import os
 import asyncio
-import re
+import time
+import re 
+from endpoint import Endpoint
 
 
 class Bluetooth():
@@ -20,6 +22,8 @@ class Bluetooth():
         self.current_album = ""
         self.current_song_duration = 0
         self.current_song_position = 0
+        self.variable = True
+        self.endpoint = None
 
 ##############################################
 #
@@ -38,23 +42,41 @@ class Bluetooth():
         proxy = await self.get_adapter_proxy()
         return proxy.get_interface('org.freedesktop.DBus.Properties')
 
-    async def get_device_interface(self,device_mac):
+    async def get_device_proxy(self,device_mac):
         device_introspection = await self.bus.introspect("org.bluez", "/org/bluez/hci0/dev_"+device_mac)
-        device_proxy = self.bus.get_proxy_object("org.bluez","/org/bluez/hci0/dev_"+device_mac,device_introspection)
+        return self.bus.get_proxy_object("org.bluez","/org/bluez/hci0/dev_"+device_mac,device_introspection)
+
+    async def get_device_interface(self,device_mac):
+        device_proxy = await self.get_device_proxy(device_mac)        
         device_interface = device_proxy.get_interface("org.bluez.Device1")
         return device_interface
 
-    async def get_player_proxy(self,mac):
-        path = f"/org/bluez/hci0/dev_{mac}/player0"
+    async def get_legacy_player_interface(self,device_mac):
+        try:
+            adapter_proxy = await self.get_device_proxy(device_mac)
+            return adapter_proxy.get_interface("org.bluez.MediaControl1")
+        except DBusError:
+            print(f"can't get legacy media control for {device_mac}")  
+
+    async def get_media_interface(self):
+        proxy = await self.get_adapter_proxy()
+        return proxy.get_interface("org.bluez.Media1")
+
+    async def get_player_proxy(self,device_mac):
+        path = f"/org/bluez/hci0/dev_{device_mac}/player0"
         device_introspection = await self.bus.introspect("org.bluez", path)
         return self.bus.get_proxy_object("org.bluez",path,device_introspection)
 
-    async def get_player_interface(self,mac):
+    async def get_player_interface(self,device_mac):
         try:
-            player_proxy = await self.get_player_proxy(mac)
+            player_proxy = await self.get_player_proxy(device_mac)
             return player_proxy.get_interface("org.bluez.MediaPlayer1")
         except DBusError:
-            raise
+            print(f"can't get media player for {device_mac}")
+
+
+    
+
 
 ##############################################
 #
@@ -96,6 +118,18 @@ class Bluetooth():
 #
 ##############################################
 
+    async def register_player(self):
+        media = await self.get_media_interface()
+        path = "/test/endpoint"
+        A2DP_SINK_UUID = "0000110B-0000-1000-8000-00805F9B34FB"
+        properties = {
+            "UUID" : Variant('s',A2DP_SINK_UUID),
+            "Codec" : Variant('y',0), #sbc codec
+            "DelayReporting" : Variant('b',True),
+            "Capabilities" : Variant('ay',b"\0xff\0xff\0x20\x64")
+        }
+        self.endpoint = Endpoint()
+        await media.call_register_endpoint(path,properties)
 
     async def get_metadata(self):
         while True:
@@ -123,7 +157,7 @@ class Bluetooth():
                         #print(os.times(),position)
                         self.current_song_position = position
                         #self.listen_to_media_properties("org.bluez.MediaPlayer1",position,"nothing")
-                    except DBusError:
+                    except:
                         #print(err)
                         self.metadata_reset()   
                 await asyncio.sleep(1)
@@ -143,22 +177,37 @@ class Bluetooth():
 #   Utils functions & API      
 #
 ##############################################
+    async def testBlocking(self):
+        while True:
+            #if self.variable:
+                #print(time.time())
+            #bluez_introspection = await self.bus.introspect("wall.controller", "/wall/controller")
+            #bluez_proxy = self.bus.get_proxy_object("org.bluez", "wallcontroller/agent1",bluez_introspection)
+            #iface = bluez_proxy.get_interface("wallcontroller.Agent1")
+            #print(iface.get_bar())
+            await asyncio.sleep(5)
 
     async def get_devices(self):
         try:          
+            #print("start get_devices")
+            if self.connected_device_mac != "":
+                device_interface = await self.get_device_interface(self.connected_device_mac)
+                if await device_interface.get_connected():
+                    return
             adapter_proxy = await self.get_adapter_proxy()
             device_connected = False
             for components in adapter_proxy.introspection.nodes:
                 device_mac = components.name[4:]
                 device_interface = await self.get_device_interface(device_mac)
-                if await device_interface.get_paired() and device_mac not in self.paired_devices:
-                    print(device_mac)
+                if device_mac not in self.paired_devices:
+                    #print(device_mac)
                     self.paired_devices.append(device_mac)
                     self.paired_devices_name.append(await device_interface.get_name())
                     await device_interface.set_trusted(True)
                     
                 if await device_interface.get_connected():
                     #to do - request UUID maybe but maybe trust does the trick 
+                    await self.stop_pairing()
                     if not self.connected_device_mac == device_mac:
                         player_proxy = await self.get_player_proxy(device_mac)
                         try:
@@ -173,23 +222,23 @@ class Bluetooth():
                     #device_properties_interface.on_properties_changed(self.listen_to_device_properties)
                     #metadata listener
                     #
-                                       
+            #print("end of first loop get_devices")                        
             if not device_connected:
                 self.metadata_reset()
-                #await self.try_connect()
+            """    #await self.try_connect()
                 for components in adapter_proxy.introspection.nodes:
                     device_mac = components.name[4:]
-                    device_interface = await self.get_device_interface(device_mac)    
+                    device_interface = await self.get_device_interface(device_mac)   
                     if await device_interface.get_paired():
                         try:
-                            await device_interface.call_connect()                
-                            print("actively connected to: "+device_mac)
+                            #await device_interface.call_connect() #this somehow doesn't work all the time. Not sure if needed to conenct profiles               
+                            print("actively trying to connect: "+device_mac)
                             player_proxy = await self.get_player_proxy(device_mac)
                             player_properies_interface = player_proxy.get_interface("org.freedesktop.DBus.Properties")
                             player_properies_interface.on_properties_changed(self.listen_to_media_properties)
                         except:
-                            print("device not ready:"+device_mac)
-
+                            print("device not ready:"+device_mac)"""
+            #print("end of get_devices")   
         except DBusError:
             raise
 
@@ -326,7 +375,7 @@ class Bluetooth():
                 
     async def media_control(self,cmd):
         try:
-            mac = await self.get_connected_device_mac()
+            mac = self.connected_device_mac
             if mac == "":
                 return
             player = await self.get_player_interface(mac)
@@ -340,5 +389,23 @@ class Bluetooth():
                 await player.call_previous()
             elif cmd ==  "next":
                 await player.call_next()
-        except DBusError:
-            raise
+        except:
+            #print("can't get MediaPlayer1 interface")
+            try:        
+                mac = self.connected_device_mac
+                if mac == "":
+                    return
+                player = await self.get_legacy_player_interface(mac)
+                if cmd == "play":
+                    await player.call_play()
+                elif cmd == "stop":
+                    await player.call_stop()
+                elif cmd == "pause":
+                    await player.call_pause()
+                elif cmd ==  "prev":
+                    await player.call_previous()
+                elif cmd ==  "next":
+                    await player.call_next()
+            except:
+                raise
+                #print("also legacy interface not found")

@@ -3,8 +3,11 @@ import json
 #from main import WallController
 import re
 import subprocess
+import gpiod
 import array
 import gc
+import queue
+from encoder2 import Encoder
 
 #from heartbeat import heartbeat  # Optional LED flash
 
@@ -15,39 +18,49 @@ class APIServer():
         self.port = port
         self.backlog = backlog
         self.timeout = timeout
-        self.version = 0.1
         self.bluetooth = None
-		#self.i2c = SoftI2C(sda=Pin(15),scl=Pin(14))
-		#self.display = Display(self.i2c,self.nic)
+        self.display = None
+        self.tx_buf = []
+        self.connections = {}
+        self.available_zones = []
+        self.available_gains = {}
+        self.current_zone = ""
+        self.zone_select = False
+        self.encoder = Encoder(self)
+        self.encoder_queue = []
+        self.encoderModifierIncrease = 0.01
+        self.encoderModifierLimit = 0.05
         self.encoderModifierLeft = 0
         self.encoderModifierRight = 0
-		#self.interuptPin = Pin(35,Pin.IN,Pin.PULL_UP)
-		#self.interuptPin.irq(handler=self.safeInterupt, trigger=Pin.IRQ_FALLING)
-        self.rxBuf = []
-        self.txBuf = []
-        self.activeLED = 1
-        self.connections = {}
-        self.availableZones = []
-        self.availableGains = []
-        self.currentZone = ""
-        self.blinkingDisplay = False
-	
-    def getVersion(self):
-        return self.version
 
     def passBluetooth(self,bt):
         self.bluetooth = bt
+    
+    def passDisplay(self,display):
+        self.display = display
+
+    def showIP(self):
+        NIC = "eth0"
+        output = subprocess.run('ifconfig '+ NIC, shell=True, check=True, stdout=subprocess.PIPE, universal_newlines=True).stdout
+        #output = process.stdout
+        IP = re.search("addr:\d*.\d*.\d*.\d*",output).group(0)[5:]
+        SN = re.search("Mask:\d*.\d*.\d*.\d*",output).group(0)[5:]
+        output = subprocess.run('ip r', shell=True, check=True, stdout=subprocess.PIPE, universal_newlines=True).stdout
+        #output = process.stdout
+        GW = re.search("via \d*.\d*.\d*.\d*",output).group(0)[4:]
+        self.display.show_network_settings(IP,SN,GW)
 
     async def sendTX(self):
         while True:
             try:
-                for x in self.txBuf:
+                for x in self.tx_buf:
+                    #print(x)
                     await self.sendData(x)
-                self.txBuf.clear()
+                self.tx_buf.clear()
             except:
                 raise
             #heavily influences cpu load
-            await asyncio.sleep(0.005)
+            await asyncio.sleep(0.01)
 
     async def send_whole_state(self):
         data = {"devices" : self.bluetooth.paired_devices_name}
@@ -56,9 +69,10 @@ class APIServer():
         data["mac"] = self.bluetooth.mac
         data2 = {"all" : data}
         data2 = json.dumps(data2)
-        self.txBuf.append(data2)
+        self.tx_buf.append(data2)
 
     async def run(self):
+        self.showIP()
         self.cid = 0
         self.server = await asyncio.start_server(self.run_client, self.host, self.port)
         while True: 
@@ -75,14 +89,14 @@ class APIServer():
         try:
             while True:
                 try:
-                    data = await asyncio.wait_for(sreader.read(5000), self.timeout)
+                    data = await asyncio.wait_for(sreader.read(10000), self.timeout)
                     length = int.from_bytes(data[:1], "big")   
                     position = 0
                     while position < len(data):
                         cmd = data[position+1:position+length+1]
                         if self.bluetooth != None:
                             await self.parseData(cmd)
-                        #print(cmd)
+                        #print(cmd,self.bluetooth)
                         position = position + length +1 
                         length = int.from_bytes(data[position:position+1], "big") 
                 except asyncio.TimeoutError:
@@ -95,15 +109,14 @@ class APIServer():
         self.connections.pop(str(localID))
         print('Client {} socket closed.'.format(self.cid))
         if len(self.connections) == 0:
-            pass
-            #self.display.showIP()
+            self.showIP()
 		
     async def sendData(self,data):
         if len(self.connections) == 0:
-            self.txBuf.clear()
+            self.tx_buf.clear()
         for connection in self.connections:
             try:
-                print(data)
+                #print(data)
                 self.connections[connection].write((data+"\r").encode('utf_8'))
                 await self.connections[connection].drain()
             except asyncio.TimeoutError:
@@ -112,8 +125,11 @@ class APIServer():
     async def parseData(self,data):
         try:
             data = data.decode("UTF-8")
-            data = json.loads(data)
-            #print(data)
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                print("couldn't parse data, possible buffer overflow")
+            print(data)
             for key in data:
                 if key == "keepAlive":
                     pass 
@@ -143,24 +159,19 @@ class APIServer():
                     await self.sendData(json.dumps({"song_progress":{"duration" : self.bluetooth.current_song_duration,
                                                     "position" : self.bluetooth.current_song_position}}))
                 elif key == "gain":
-                    self.currentZone = data[key]["zone"]
-                    #self.display.showVolume(data[key]["Gain"],data[key]["Zone"]) 
-                #elif key == "availableZones":
-                 #   if self.blinkingDisplay:
-                  #      self.blinkingDisplay = False
-                   #     self.display.stopBlink()
-                    #    self.availableZones.clear()
-                     #   self.availableGains.clear()
-                      #  cmd = {"Zone set" : self.currentZone}
-                       # self.txBuf.append(json.dumps(cmd))
-                    #else:
-                     #   self.blinkingDisplay = True
-                      #  self.display.startBlink()
-                       # index = 0
-                        #for x in data[key]:
-                         #   for zone in x:
-                          #      self.availableZones.append(zone)
-                           #     self.availableGains.append(x[zone])
+                    self.current_zone = data[key]["zone"]
+                    if not self.zone_select:
+                        self.display.show_zone_level(data[key]["gain"],data[key]["zone"]) 
+                elif key == "zone_names":
+                    self.available_zones.clear()
+                    self.available_gains.clear()
+                    for zonedata in data[key]:
+                        #print(zonedata)
+                        self.available_gains.update(zonedata)
+                        for zonename in zonedata.keys():
+                            self.available_zones.append(zonename)
+                    self.display.create_zones(self.available_zones)
+                    print(self.available_gains)
         except Exception as error:
             raise
             print("parsingerror: " + str(error))
@@ -170,6 +181,29 @@ class APIServer():
         self.server.close()
         #await self.server.wait_closed()
         print('Server closed.')
+
+    async def handle_encoder_events(self):
+        while True:
+            while len(self.encoder_queue) >0:
+                event = self.encoder_queue.pop()
+                if event[0] == "left":
+                    new_gain = event[1]
+                    data =  {"vol_down" : new_gain}
+                    self.display.show_zone_level(
+                        self.available_gains[self.current_zone],
+                        self.current_zone
+                    )
+                    self.tx_buf.append(json.dumps(data))
+                elif event[0] == "right":
+                    new_gain = event[1]
+                    data =  {"vol_up" : new_gain}
+                    self.display.show_zone_level(
+                        self.available_gains[self.current_zone],
+                        self.current_zone
+                    )
+                    self.tx_buf.append(json.dumps(data))
+
+            await asyncio.sleep(0)
 
     def config_pulseaudio(self,ip):
         pulseconfig = open("/etc/pulse/system.pa")

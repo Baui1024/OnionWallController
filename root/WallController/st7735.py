@@ -24,6 +24,7 @@ import time
 import struct
 import array
 import sys
+import wallcontrollerutils
 
 import spidev
 #import RPi.GPIO as GPIO
@@ -115,7 +116,7 @@ def color565(r, g, b):
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
-def image_to_data(image, rotation=0):
+def image_to_data(image, width, height, rotation=0):
     """Generator function to convert a PIL image to 16-bit 565 RGB bytes."""
     # NumPy is much faster at doing this. NumPy code provided by:
     # Keith (https://www.blogger.com/profile/02555547344016007163)
@@ -123,17 +124,15 @@ def image_to_data(image, rotation=0):
     #pb = np.rot90(np.array(image.convert('RGB')), rotation // 90).astype('uint16')
     #color = ((pb[:, :, 0] & 0xF8) << 8) | ((pb[:, :, 1] & 0xFC) << 3) | (pb[:, :, 2] >> 3)
     #return np.dstack(((color >> 8) & 0xFF, color & 0xFF)).flatten().tolist()
-    
-    pixels = list(image.getdata())
-    img_buffer = []
-    for pix in pixels:
-            r = (pix[0] >> 3) & 0x1F
-            g = (pix[1] >> 2) & 0x3F
-            b = (pix[2] >> 3) & 0x1F
-            pixel = (r << 11) + (g << 5) + b
-            pixel_rgb = [pixel >> 8, pixel & 255]
-            img_buffer.extend(pixel_rgb)
-    return img_buffer
+    start = time.time()
+    pixels = image.tobytes()
+    #print("image to bytes: ",time.time()-start)
+    #change height/width because display is vertical
+    start = time.time()
+    image565 = wallcontrollerutils.convertImage(pixels,height,width,rotation)
+    #print("bytes to rgb565: ",time.time()-start)
+    return image565
+
 
 class ST7735(object):
     """Representation of an ST7735 TFT LCD."""
@@ -219,15 +218,25 @@ class ST7735(object):
         #GPIO.output(self._dc, is_data)
         # Convert scalar argument to list so either can be passed as parameter.
 
+        start = time.time()    
+        #print(type(data))
         
-
-        if isinstance(data, numbers.Number):
+        if not isinstance(data, bytes):
+            #print("bytes are numbers?")
+            pass
+            #data = bytes(data)
+            #print(data)
             data = [data & 0xFF]
-        
+
+        self._spi.writebytes2(data)
+        return
         for i in range(0, len(data), chunk_size):
             chunk = data[i:i + chunk_size]
             #print(f"chunk pos {i}: \n", chunk)
-            self._spi.xfer3(chunk,0)
+            #print(type(chunk))
+            self._spi.writebytes2(chunk)
+        #print("sending spi bus: ",time.time()-start)
+
         
 
     def set_backlight(self, value):
@@ -382,6 +391,8 @@ class ST7735(object):
         self.command(ST7735_DISPON)     # Display on
         time.sleep(0.100)               # 100 ms
 
+        self.set_window()
+
     def begin(self):
         """Set up the display
 
@@ -428,14 +439,13 @@ class ST7735(object):
 
         """
         # Set address bounds to entire display.
-        self.set_window()
+        #self.set_window()
         # Convert image to array of 16bit 565 RGB data bytes.
         # Unfortunate that this copy has to occur, but the SPI byte writing
         # function needs to take an array of bytes and PIL doesn't natively
         # store images in 16-bit 565 RGB format.
-        #pixelbytes = image_to_data(image)
-
-        pixelbytes = list(image_to_data(image, self._rotation))
-        print(len(pixelbytes))
+        #start = time.time()
+        pixelbytes = image_to_data(image,self._width, self._height, self._rotation)
+        #print("whole conversion: ",time.time()-start)
         # Write data to hardware.
         self.data(pixelbytes)
