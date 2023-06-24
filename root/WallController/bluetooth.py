@@ -86,7 +86,8 @@ class Bluetooth():
 
     def listen_to_adapter_properties(self,interface_name, changed_properties, invalidated_properties):
         for changed, variant in changed_properties.items():
-            print(f'property changed: {changed} - {variant.value}')
+            pass
+            print(f'property on adapter changed: {changed} - {variant.value}')
 
     def listen_to_device_properties(self,interface_name, changed_properties, invalidated_properties):
         for changed, variant in changed_properties.items():
@@ -372,7 +373,7 @@ class Bluetooth():
             await adapter.set_powered(True)
         except DBusError:
             raise
-                
+    
     async def media_control(self,cmd):
         try:
             mac = self.connected_device_mac

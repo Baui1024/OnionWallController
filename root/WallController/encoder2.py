@@ -32,6 +32,8 @@ class Encoder():
         self.encoder_timeout = 0.05
         self.encoderModifierIncrease = 0.01
         self.encoderModifierLimit = 0.05
+        self.last_right = 0
+        self.last_left = 0
         self.apisocket = apisocket
         self.gpiomem = MMIO(0x10000620, 0x10000000) #32bit register containing chip0 gpio data
         self.epoll = select.epoll()
@@ -97,6 +99,20 @@ class Encoder():
         self.encoderModifierLeft -= self.encoderModifierIncrease
         self.encoderModifierRight -= self.encoderModifierIncrease
 
+    def speedmodifier(self,time):
+        add = 0
+        if time < 40:
+            add = 0.03
+   #     elif time < 70: 
+  #          add = 0.025
+        elif time < 100:
+            add = 0.02
+ #       elif time < 160:
+#            add = 0.015
+        elif time < 150:
+            add = 0.01   
+        return add
+
     def handle_rotation(self):
         try:
             registergpio = '{:032b}'.format(self.gpiomem.read32(0x00))
@@ -106,11 +122,13 @@ class Encoder():
             self.state = self.ttable[self.state & 0xf][pinstate]
             if self.DIR_CCW == (self.state & 0x30):
                 #print("right")
+                
                 self.start_lock_timer()
                 self.start_encoder_timer()
                 self.left_lock = True
                 self.right_counter += 1
-                print("right",self.right_counter) 
+                #print("right",self.right_counter) 
+                #print(time.time_ns()/1000/1000-self.last_right)
                 if self.apisocket.zone_select:
                     new_zone_index = len(self.apisocket.available_zones)-1
                     for index,zone in enumerate(self.apisocket.available_zones):
@@ -121,13 +139,17 @@ class Encoder():
                     self.apisocket.current_zone = self.apisocket.available_zones[new_zone_index]                                            
                     self.apisocket.display.select_zone(self.apisocket.current_zone)              
                 else:
-                    new_gain = 0.02+self.encoderModifierRight
+                #    new_gain = 0.02+self.encoderModifierRight
+                    delay_since_last_click = time.time_ns()/1000/1000-self.last_right
+                    #print(delay_since_last_click)
+                    new_gain = 0.01 + self.speedmodifier(delay_since_last_click)
                     self.apisocket.available_gains[self.apisocket.current_zone] += new_gain*100
                     if self.apisocket.available_gains[self.apisocket.current_zone] >= 100:
                             self.apisocket.available_gains[self.apisocket.current_zone] = 100
                     self.apisocket.encoder_queue.append(("right",new_gain))
                     if self.encoderModifierRight < self.encoderModifierLimit:
                         self.encoderModifierRight += self.encoderModifierIncrease
+                self.last_right = time.time_ns()/1000/1000
                 """if self.apisocket.zone_select:
                     new_zone_index = len(self.apisocket.available_zones)-1
                     for index,zone in enumerate(self.apisocket.available_zones):
@@ -152,7 +174,7 @@ class Encoder():
                 self.start_encoder_timer()
                 self.right_lock = True
                 self.left_counter += 1
-                print("left",self.left_counter)
+                #print("left",self.left_counter)
                 if self.apisocket.zone_select:
                     new_zone_index = 0
                     for index,zone in enumerate(self.apisocket.available_zones):
@@ -163,13 +185,17 @@ class Encoder():
                     self.apisocket.current_zone = self.apisocket.available_zones[new_zone_index]                                            
                     self.apisocket.display.select_zone(self.apisocket.current_zone)              
                 else:
-                    new_gain = 0.02+self.encoderModifierLeft
+                    delay_since_last_click = time.time_ns()/1000/1000-self.last_left
+                    #print(delay_since_last_click)
+                    new_gain = 0.01 + self.speedmodifier(delay_since_last_click)
+                    #new_gain = 0.02+self.encoderModifierLeft
                     self.apisocket.available_gains[self.apisocket.current_zone] -= new_gain*100
                     if self.apisocket.available_gains[self.apisocket.current_zone] <= 0:
                         self.apisocket.available_gains[self.apisocket.current_zone] = 0
                     self.apisocket.encoder_queue.append(("left",new_gain))
                     if  self.encoderModifierLeft < self.encoderModifierLimit:
                         self.encoderModifierLeft += self.encoderModifierIncrease
+                self.last_left = time.time_ns()/1000/1000
                 """if self.apisocket.zone_select:
                     new_zone_index = 0
                     for index,zone in enumerate(self.apisocket.available_zones):
@@ -202,6 +228,13 @@ class Encoder():
                     self.apisocket.display.select_zone(self.apisocket.current_zone)
                     self.apisocket.zone_select = True
                     print("Menu")
+
+    def handle_pairing(self):
+        with open(f"/sys/class/gpio/gpio{self.offset_pairing}/value", "r") as pairingval:
+            if pairingval.readline()[:1] == "0":
+                data =  {"pairing_pressed" : True}
+                self.apisocket.tx_buf.append(json.dumps(data))
+
     def main(self):
         os.nice(-20)
         #print(f"the nicenes of encoder thread is: {os.nice(0)} ")
@@ -214,9 +247,7 @@ class Encoder():
                         #print("left falling")
                         self.handle_rotation()                                    
                     if fileno == self.value_file_pairing.fileno():
-                         with open(f"/sys/class/gpio/gpio{self.offset_pairing}/value", "r") as pairingval:
-                            if pairingval.readline()[:1] == "0":
-                                print("pairing")
+                        self.handle_pairing()
                     if fileno == self.value_file_encoder.fileno():
                         self.handle_encoder()
         except KeyboardInterrupt:

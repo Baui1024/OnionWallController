@@ -4,6 +4,7 @@ from PIL import ImageFont
 from st7735 import ST7735
 from copy import copy
 from threading import Timer
+import asyncio
 
 class Display():
     def __init__(self):
@@ -24,24 +25,48 @@ class Display():
         self.fontsize = 15
         self.fontsize_big = 20
         self.font = "/root/WallController/Roboto-Light.ttf"
+        self.iconfont = "/root/WallController/bluetoothicons.ttf"
         self.images = {}
         self.main_color = (255,255,255)
         self.background_color = (0,0,0)
         self.upper_line = 30
         self.lower_line = 60
         self.x_offset = 2 
-        self.timeout = 30
         self.timer = None
+        self.frame_timer = None
+        self.bluetoothname = ""
+        self.frame = 0
+        self.mode = "startup"
 
-    def start_timer(self):
+    def start_timer(self,timeout = 30):
         try: 
             self.timer.cancel()
         except AttributeError:
             pass
-        self.timer = Timer(self.timeout, self.show_blank_screen)
+        self.timer = Timer(timeout, self.show_blank_screen)
         self.timer.start()
+    
+    def start_frame_timer(self,timeout=1):
+        try:
+            self.frame_timer.cancel()
+        except:
+            pass
+        self.frame_timer = Timer(timeout, self.show_pairing_state, [self.bluetoothname])
+        self.frame_timer.start()
+
+    def stop_timer(self):
+        try: 
+            self.timer.cancel()
+        except AttributeError:
+            pass
+        try:
+            self.frame_timer.cancel()
+        except:
+            pass
 
     def show_network_settings(self,ip,subnet,gateway):
+        if self.mode == "pairing":
+            return
         font = ImageFont.truetype(self.font, self.fontsize)
         img = Image.new('RGB', (self.WIDTH, self.HEIGHT), color = self.background_color)
         draw = ImageDraw.Draw(img)
@@ -50,7 +75,46 @@ class Display():
         self.display.display(img)
         self.start_timer()
 
+    def show_pairing_result(self, name):
+        if self.mode == "startup":
+            return
+        self.mode = "finished pairing"
+        font = ImageFont.truetype(self.font, self.fontsize)
+        img = Image.new('RGB', (self.WIDTH, self.HEIGHT), color = self.background_color)
+        draw = ImageDraw.Draw(img)
+        draw.text((self.WIDTH/2, 7), f"{name}", font=font, anchor = "mt", fill = self.main_color)
+        self.display.display(img)
+        self.stop_timer()
+        self.start_timer(10)
+
+    def show_pairing_state(self, name):
+        if self.mode == "startup":
+            return
+        self.stop_timer()
+        self.mode = "pairing"
+        self.bluetoothname = name
+        print("display mode pairing name:", name)
+        font = ImageFont.truetype(self.font, self.fontsize)
+        iconfont = ImageFont.truetype(self.iconfont,30)
+        img = Image.new('RGB', (self.WIDTH, self.HEIGHT), color = self.background_color)
+        draw = ImageDraw.Draw(img)
+        print(self.frame,)
+        draw.text((self.WIDTH/2, 7), f"{name}", font=font, anchor = "mt", fill = self.main_color)
+        draw.text((30, 30), f"a", font=iconfont, anchor = "mt", fill = (0,0,255))
+        draw.text((50, 30), f"Searching"+"."*self.frame, font=font, anchor = "lt", fill = (0,0,255))
+        self.frame += 1
+        if self.frame > 3:
+            self.frame = 0 
+        #else:
+        #    draw.text((self.WIDTH/2, 7), f"{name}", font=font, anchor = "mt", fill = self.main_color)
+        #    draw.text((30, 30), f"a", font=iconfont, anchor = "mt", fill = (0,0,255))
+        self.display.display(img)
+        self.start_frame_timer(1)
+
+
     def show_zone_level(self,level,zone):
+        if self.mode == "pairing":
+            return
         if zone in self.images:
             image = copy(self.images[zone])
             draw = ImageDraw.Draw(image)
@@ -77,6 +141,8 @@ class Display():
             self.images[zone] = img
 
     def select_zone(self,zone):
+        if self.mode == "pairing":
+            return
         font = ImageFont.truetype(self.font, self.fontsize)
         img = Image.new('RGB', (self.WIDTH, self.HEIGHT), color = self.background_color)
         draw = ImageDraw.Draw(img)
@@ -87,11 +153,15 @@ class Display():
 
 
     def show_blank_screen(self):
+        self.mode = "blank"
         img = Image.new('RGB', (self.WIDTH, self.HEIGHT), color = (0,0,0))
         self.display.display(img)
 
 import time
     
+#test = Display()
+#test.create_zones(["test123","avadakedavra"])
+#test.show_zone_level(0,"test123")
 """start = time.time()
 test = Display()
 end = time.time()-start

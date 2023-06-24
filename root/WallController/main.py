@@ -58,6 +58,11 @@ class WallController:
         def callback(interface_name, changed_properties, invalidated_properties):
             for changed, variant in changed_properties.items():
                 print(f'property changed: {changed} - {variant.value}')
+                if changed == "Pairable":
+                    if variant.value:
+                        self.socket.display.show_pairing_state(self.bluetooth.name)
+                    else:
+                        self.socket.display.show_blank_screen()
 
         dongle_interface = dongel_proxy.get_interface("org.freedesktop.DBus.Properties")
         dongle_interface.on_properties_changed(callback)

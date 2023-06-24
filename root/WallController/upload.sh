@@ -1,4 +1,4 @@
-ip=192.168.178.91
+ip=192.168.178.96
 scp bluetooth.py root@$ip:WallController/bluetooth.py
 scp apisocket.py root@$ip:WallController/apisocket.py
 scp endpoint.py root@$ip:WallController/endpoint.py

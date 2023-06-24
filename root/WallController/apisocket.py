@@ -137,10 +137,13 @@ class APIServer():
                     if data[key] == "all":
                         await self.send_whole_state()
                 elif key == "pairing":
+                    print("pairing:",data[key])
                     if data[key]:
                         await self.bluetooth.start_pairing()
+                        self.display.show_pairing_state(await self.bluetooth.get_name())
                     else:
                         await self.bluetooth.stop_pairing()
+                        self.display.show_pairing_result("Pairing Stopped")
                 elif key == "remove_all_devices":
                     await self.bluetooth.remove_all_devices()
                 elif key == "remove_device":
@@ -160,6 +163,7 @@ class APIServer():
                                                     "position" : self.bluetooth.current_song_position}}))
                 elif key == "gain":
                     self.current_zone = data[key]["zone"]
+                    self.available_gains[self.current_zone] = data[key]["gain"]
                     if not self.zone_select:
                         self.display.show_zone_level(data[key]["gain"],data[key]["zone"]) 
                 elif key == "zone_names":
@@ -184,7 +188,8 @@ class APIServer():
 
     async def handle_encoder_events(self):
         while True:
-            while len(self.encoder_queue) >0:
+            #print(self.encoder_queue)
+            if self.encoder_queue:
                 event = self.encoder_queue.pop()
                 if event[0] == "left":
                     new_gain = event[1]
@@ -203,7 +208,7 @@ class APIServer():
                     )
                     self.tx_buf.append(json.dumps(data))
 
-            await asyncio.sleep(0)
+            await asyncio.sleep(0.01)
 
     def config_pulseaudio(self,ip):
         pulseconfig = open("/etc/pulse/system.pa")
